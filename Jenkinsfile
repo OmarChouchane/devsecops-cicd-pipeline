@@ -10,12 +10,32 @@ pipeline {
   }
   environment {
     DOCKER_IMAGE = "omarchouchane/ultimate-cicd:${BUILD_NUMBER}"
+    VAULT_ADDR   = "http://host.docker.internal:8200"
+    VAULT_VERSION = "1.17.2"
   }
   stages {
     stage('Checkout') {
       steps {
         sh 'docker run --rm -u root -v "$WORKSPACE":/workspace alpine sh -lc "rm -rf /workspace/* /workspace/.[!.]* /workspace/..?* /workspace/.??* 2>/dev/null || true"'
         checkout scm
+      }
+    }
+    stage('Fetch Dynamic Secrets from Vault') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'vault-approle', usernameVariable: 'VAULT_ROLE_ID', passwordVariable: 'VAULT_SECRET_ID')]) {
+          script {
+            sh '''
+              curl -sSfL "https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip" -o /tmp/vault.zip
+              unzip -o /tmp/vault.zip -d /usr/local/bin
+            '''
+            // Short-lived token issued per build via AppRole login (not a long-lived static secret)
+            env.VAULT_TOKEN = sh(script: 'vault write -field=token auth/approle/login role_id="$VAULT_ROLE_ID" secret_id="$VAULT_SECRET_ID"', returnStdout: true).trim()
+            env.SONAR_TOKEN    = sh(script: 'vault kv get -field=token secret/sonarqube', returnStdout: true).trim()
+            env.DOCKERHUB_USER = sh(script: 'vault kv get -field=username secret/dockerhub', returnStdout: true).trim()
+            env.DOCKERHUB_PASS = sh(script: 'vault kv get -field=password secret/dockerhub', returnStdout: true).trim()
+            env.GITHUB_TOKEN   = sh(script: 'vault kv get -field=token secret/github', returnStdout: true).trim()
+          }
+        }
       }
     }
     stage('Build and Test') {
@@ -28,9 +48,7 @@ pipeline {
         SONAR_URL = "http://host.docker.internal:9000"
       }
       steps {
-        withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_TOKEN')]) {
-          sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.token=$SONAR_TOKEN -Dsonar.host.url=${SONAR_URL} -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
-        }
+        sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.token=$SONAR_TOKEN -Dsonar.host.url=${SONAR_URL} -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
       }
     }
     stage('Trivy Filesystem Scan') {
@@ -55,16 +73,11 @@ pipeline {
       }
     }
     stage('Push Docker Image') {
-      environment {
-        REGISTRY_CREDENTIALS = credentials('docker-cred')
-      }
       steps {
-        script {
-          def dockerImage = docker.image("${DOCKER_IMAGE}")
-          docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
-              dockerImage.push()
-          }
-        }
+        sh '''
+          echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USER" --password-stdin
+          docker push ${DOCKER_IMAGE}
+        '''
       }
     }
     stage('Generate SBOM (Syft)') {
@@ -93,7 +106,6 @@ pipeline {
         GIT_USER_NAME = "omarchouchane"
         }
         steps {
-            withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
                 sh '''
           git config --global user.email "omar.ch52831@gmail.com"
           git config --global user.name "Omar Chouchane"
@@ -109,8 +121,16 @@ pipeline {
                     git commit -m "Update deployment image to version ${BUILD_NUMBER}"
             git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:main
                 '''
-            }
         }
+    }
+  }
+  post {
+    always {
+      script {
+        if (env.VAULT_TOKEN) {
+          sh 'vault token revoke "$VAULT_TOKEN" || true'
+        }
+      }
     }
   }
 }
