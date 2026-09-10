@@ -67,6 +67,26 @@ pipeline {
         }
       }
     }
+    stage('Generate SBOM (Syft)') {
+      steps {
+        sh '''
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$WORKSPACE":/output \
+            anchore/syft:latest ${DOCKER_IMAGE} -o cyclonedx-json=/output/sbom-${BUILD_NUMBER}.json
+        '''
+        archiveArtifacts artifacts: "sbom-${BUILD_NUMBER}.json", fingerprint: true
+      }
+    }
+    stage('SBOM Vulnerability Scan (Grype)') {
+      steps {
+        sh '''
+          docker run --rm \
+            -v "$WORKSPACE":/input \
+            anchore/grype:latest sbom:/input/sbom-${BUILD_NUMBER}.json --fail-on critical -o table
+        '''
+      }
+    }
     stage('Update Deployment File') {
         environment {
         GIT_REPO_NAME = "spring-app-manifests"
