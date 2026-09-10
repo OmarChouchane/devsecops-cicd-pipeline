@@ -100,6 +100,15 @@ pipeline {
         '''
       }
     }
+    stage('Sign Image (Cosign via Vault Transit)') {
+      steps {
+        sh '''
+          curl -sSfL -o /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+          chmod +x /usr/local/bin/cosign
+          cosign sign --key hashivault://cosign-key --yes ${DOCKER_IMAGE}
+        '''
+      }
+    }
     stage('Update Deployment File') {
         environment {
         GIT_REPO_NAME = "spring-app-manifests"
