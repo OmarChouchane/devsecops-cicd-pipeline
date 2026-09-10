@@ -8,6 +8,9 @@ pipeline {
   options {
     skipDefaultCheckout(true)
   }
+  environment {
+    DOCKER_IMAGE = "omarchouchane/ultimate-cicd:${BUILD_NUMBER}"
+  }
   stages {
     stage('Checkout') {
       steps {
@@ -30,18 +33,37 @@ pipeline {
         }
       }
     }
-    stage('Build and Push Docker Image') {
+    stage('Trivy Filesystem Scan') {
+      steps {
+        sh '''
+          docker run --rm -v "$WORKSPACE":/workspace aquasec/trivy:latest fs \
+            --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed /workspace
+        '''
+      }
+    }
+    stage('Build Docker Image') {
+      steps {
+        sh 'docker build -t ${DOCKER_IMAGE} .'
+      }
+    }
+    stage('Trivy Image Scan') {
+      steps {
+        sh '''
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image \
+            --exit-code 1 --severity CRITICAL --ignore-unfixed ${DOCKER_IMAGE}
+        '''
+      }
+    }
+    stage('Push Docker Image') {
       environment {
-        DOCKER_IMAGE = "omarchouchane/ultimate-cicd:${BUILD_NUMBER}"
         REGISTRY_CREDENTIALS = credentials('docker-cred')
       }
       steps {
         script {
-            sh 'docker build -t ${DOCKER_IMAGE} .'
-            def dockerImage = docker.image("${DOCKER_IMAGE}")
-            docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
-                dockerImage.push()
-            }
+          def dockerImage = docker.image("${DOCKER_IMAGE}")
+          docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
+              dockerImage.push()
+          }
         }
       }
     }
