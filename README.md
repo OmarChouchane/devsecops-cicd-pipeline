@@ -139,7 +139,9 @@ Code Commit
 ├── Jenkinsfile              # Pipeline as Code
 ├── Dockerfile
 ├── pom.xml
-├── argocd-basic.yml
+├── argocd-basic.yml         # Installs the Argo CD operator instance
+├── argocd/
+│   └── application.yaml     # Argo CD Application: syncs spring-app-manifests
 ├── kyverno/
 │   └── require-signed-images.yaml   # Admission control: enforce signed images
 ├── vault/
@@ -229,18 +231,25 @@ sonar.qualitygate.timeout=300
 
 ## 🔁 Argo CD Setup
 
+`argocd-basic.yml` installs the Argo CD **operator instance** itself (the `ArgoCD` custom resource) — it does not point at this project's manifests. That link is a separate `Application` resource:
+
 ```bash
+# 1. Install the Argo CD operator/instance
 kubectl apply -f argocd-basic.yml
+
+# 2. Register this app so Argo CD actually syncs it
+kubectl apply -f argocd/application.yaml
 ```
 
-**Application source values:**
+**`argocd/application.yaml` source values:**
 
 | Field | Value |
 |---|---|
-| Repository URL | `https://github.com/OmarChouchane/spring-app-manifests` |
+| Repository URL | `https://github.com/OmarChouchane/spring-app-manifests.git` |
 | Revision | `main` |
 | Path | `.` |
-| Namespace | `default` |
+| Destination namespace | `default` |
+| Sync policy | Automated (`prune: true`, `selfHeal: true`) |
 
 ---
 
