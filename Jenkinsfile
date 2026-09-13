@@ -25,8 +25,11 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'vault-approle', usernameVariable: 'VAULT_ROLE_ID', passwordVariable: 'VAULT_SECRET_ID')]) {
           script {
             sh '''
-              curl -sSfL "https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip" -o /tmp/vault.zip
-              unzip -o /tmp/vault.zip -d /usr/local/bin
+              docker rm -f vault-cli-extract >/dev/null 2>&1 || true
+              docker create --name vault-cli-extract hashicorp/vault:${VAULT_VERSION}
+              docker cp vault-cli-extract:/bin/vault /usr/local/bin/vault
+              docker rm vault-cli-extract
+              chmod +x /usr/local/bin/vault
             '''
             // Short-lived token issued per build via AppRole login (not a long-lived static secret)
             env.VAULT_TOKEN = sh(script: 'vault write -field=token auth/approle/login role_id="$VAULT_ROLE_ID" secret_id="$VAULT_SECRET_ID"', returnStdout: true).trim()
