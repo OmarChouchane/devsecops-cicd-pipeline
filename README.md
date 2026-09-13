@@ -8,7 +8,7 @@ A production-style **DevSecOps** CI/CD pipeline for a Java 17 Spring Boot applic
 
 ## 🏗️ Architecture
 
-<img width="4803" height="1612" alt="diagram-export-4-23-2026-10_51_19-AM" src="https://github.com/user-attachments/assets/07931eac-63cd-475c-8018-62fab68067f9" />
+<img width="4399" height="1951" alt="JENKINS END TO END CICD PIPELINE (1)" src="https://github.com/user-attachments/assets/4ad17a8a-df0f-411e-a316-fb114689ae7a" />
 
 ---
 
